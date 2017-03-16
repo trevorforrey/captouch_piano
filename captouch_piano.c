@@ -5,7 +5,8 @@
 #include <stdio.h>
 
 // CAP1188 I2c address
-#define I2C_ADDRESS 0x28
+#define I2C_ADDRESS_1 0x28
+#define I2C_ADDRESS_2 0x29
 
 // CAP 1188 Registers
 #define CAP1188_SENINPUTSTATUS 0x3
@@ -23,7 +24,8 @@ void cap1188info();
 void setUpLEDTouch();
 uint8_t touched();
 
-int fileDescriptor = -1;
+int fileDescriptor1 = -1;
+int fileDescriptor2 = -1;
 volatile uint8_t touchedCaps;
 uint8_t i;
 
@@ -34,22 +36,45 @@ int main() {
 		printf("Wiring pi set up failure\n");
 		exit(1);
 	}
-	fileDescriptor = wiringPiI2CSetup(I2C_ADDRESS);
-	printf("fd - %d\n", fileDescriptor);
-	if (fileDescriptor  == -1) {
-		printf("Could not find cap1188\n");
+
+	// Set up file descriptor 1
+	fileDescriptor1 = wiringPiI2CSetup(I2C_ADDRESS_1);
+	printf("fd - %d\n", fileDescriptor1);
+	if (fileDescriptor1  == -1) {
+		printf("Could not find cap1188 num 1\n");
 		exit(1);
 	} 
 
-	// Check I2c communication
-	cap1188info();
-	setUpLEDTouch();
+	fileDescriptor2 = wiringPiI2CSetup(I2C_ADDRESS_2);
+	printf("fd - %d\n", fileDescriptor2);
+	if (fileDescriptor2  == -1) {
+		printf("Could not find cap1188 num 2\n");
+		exit(1);
+	} 
+
+	// Check I2c communication on #1
+	cap1188info(fileDescriptor1);
+	setUpLEDTouch(fileDescriptor1);
+
+	// Check I2c communication on #2
+	cap1188info(fileDescriptor2);
+	setUpLEDTouch(fileDescriptor2);
 
 
 	// Main loop
 	while (1) {
-		if (touched()) {
-			printf("Touch detected - %d\n", touchedCaps);
+		if (touched(fileDescriptor1)) {
+			printf("Touch detected on #1 - %d\n", touchedCaps);
+			i = 0;
+			for (i; i < 8; i++) {
+				if (touchedCaps & (1 << i)) {
+					printf("%d touched, ", i);
+				}
+				printf("\n"); //flush write buffer so all touched buttons print to term
+			}
+		}
+		else if (touched(fileDescriptor2)) {
+			printf("Touch detected on #2 - %d\n", touchedCaps);
 			i = 0;
 			for (i; i < 8; i++) {
 				if (touchedCaps & (1 << i)) {
@@ -61,19 +86,19 @@ int main() {
 	}
 }
 
-void cap1188info() {
+void cap1188info(int fileDescriptor) {
 	printf("Product Id Found - %d\n", wiringPiI2CReadReg8(fileDescriptor,CAP1188_PRODID));
 	printf("Manufac Id Found - %d\n", wiringPiI2CReadReg8(fileDescriptor,CAP1188_MANUID));
 	printf("Revision # Found - %d\n", wiringPiI2CReadReg8(fileDescriptor,CAP1188_REV));
 }
 
-void setUpLEDTouch() {
+void setUpLEDTouch(int fileDescriptor) {
 	wiringPiI2CWriteReg8(fileDescriptor,CAP1188_MTBLK, 0); // Allow multiple touches
 	wiringPiI2CWriteReg8(fileDescriptor,CAP1188_LEDLINK, 0xFF); // Have LEDs follow touch
 	wiringPiI2CWriteReg8(fileDescriptor,CAP1188_STANDBYCFG, 0x30); // speed up a bit
 }
 
-uint8_t touched() {
+uint8_t touched(int fileDescriptor) {
 	touchedCaps = wiringPiI2CReadReg8(fileDescriptor,CAP1188_SENINPUTSTATUS);
 	if (touched) {
 		wiringPiI2CWriteReg8(fileDescriptor,CAP1188_MAIN, wiringPiI2CReadReg8(fileDescriptor,CAP1188_MAIN) & ~CAP1188_MAIN_INT);
